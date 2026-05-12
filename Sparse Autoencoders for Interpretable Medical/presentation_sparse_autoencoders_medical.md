@@ -1,3 +1,5 @@
+<!-- IMAGE_WIDTH: 600 -->
+
 # Sparse Autoencoders for Interpretable Medical Image Representation Learning
 
 **Wesp et al., arXiv:2603.23794, March 2026**
@@ -19,7 +21,7 @@
 - The SAE sits **on top** of the foundation model
 - Foundation model is **not modified**
 
-<img src="media/image-1.png" alt="alt text" width="50%">
+<img src="media/image-1.png" alt="alt text" width="600">
 
 ---
 
@@ -42,7 +44,7 @@
 
 **Sparse autoencoder:** compress → reconstruct **using very few active features**
 
-<img src="media/image-2.png" alt="alt text" width="50%">
+<img src="media/image-2.png" alt="alt text" width="600">
 
 - Sparse = easier to inspect
 - Goal: each active feature = one coherent concept
@@ -67,7 +69,7 @@ SAEs are designed to push toward **monosemanticity**
 - Smaller levels are **prefixes** of larger ones
 - Avantage : force les premiers features à capturer des concepts généraux, les suivants ajoutent les détails → moins de feature absorption, flexible à l'inférence
 
-<img src="media/image-3.png" alt="Schéma des Matryoshka SAEs" width="50%">
+<img src="media/image-3.png" alt="Schéma des Matryoshka SAEs" width="600">
 
 *Source : [Learning Multi-Level Features with Matryoshka SAEs][source].*
 
@@ -146,7 +148,7 @@ $$
 - 3 foundation models
 - 4 dictionary sizes : ([16, 64, 256, 1024] to [128, 512, 2048, 8192])
 - 8  sparsity patterns (4 fixed, 4 progressive K)
-- Best config family: `[128, 512, 2048, 8192]`
+
 
 3 experiments:
 1. SAE reconstruction & downstream quality
@@ -163,8 +165,8 @@ $$
 |---|---|
 | BiomedParse | 0.890 – **0.941** |
 | DINOv3 | 0.649 – 0.841 |
-![alt text](media/image-5.png)
-![alt text](media/image-6.png)
+<img src="media/image-5.png" alt="alt text" width="600">
+<img src="media/image-6.png" alt="alt text" width="600">
 
 > High R² ≠ interpretable features
 > The random model reconstructs reasonably but fails downstream
@@ -175,8 +177,8 @@ $$
 
 *We check whether the sparse features retain enough semantic information to be useful on a real anatomical classification task.*
 
-![alt text](media/image-7.png)
-![alt text](media/image-6.png)
+<img src="media/image-7.png" alt="alt text" width="600">
+<img src="media/image-6.png" alt="alt text" width="600">
 
 | Model | Dense AUC | Recovery |
 |---|---|---|
@@ -185,13 +187,6 @@ $$
 
 > Random baseline best sparse AUC: 0.606–0.651
 
-
-**With only 10 features:**
-
-| Model | Recovery |
-|---|---|
-| BiomedParse | 87.8% |
-| DINOv3 | 82.4% |
 
 ---
 
@@ -241,7 +236,15 @@ High S(f) → the feature is locked onto a precise concept, not spread across ev
 
 ## Experiment 3a: Sparse fingerprint retrieval
 
-A **sparse fingerprint** = top-k active features + values for one image
+**What is tested:**
+1. The **fingerprint** keeps only the top-k active features + their values
+2. Find the 5 images with the most similar sparse fingerprints (cosine similarity)
+3. **Metric:** compare the retrieved images against those from the full dense embedding (cosine similarity)
+4. This process is done with 1000 images
+
+> Dense retrieval = upper bound (perfect score); sparse fingerprint aims to match it with far fewer features
+
+<img src="media/image-8.png" alt="alt text" width="600">
 
 | k | BiomedParse | DINOv3 |
 |---|---|---|
@@ -256,102 +259,79 @@ At k=5:
 
 ---
 
-## Experiment 3b: Automated feature interpretation
+## Experiments 3b: Interpretable sparse feature concepts
 
-For each of the **top 250 most monosemantic features:**
+**Goal:** verify that each sparse feature corresponds to a real, human-readable medical concept — not just a random mathematical dimension.
 
-1. Take top-20 activating images
-2. Select 5 most dissimilar among them
-3. Send to **MedGemma 27B** with metadata
-4. Generate natural-language description
+**Step 1 — Pick the cleanest features**
+Select the **top 250 most monosemantic** (mconfig)
 
-Example output:
+**Step 2 — Find their most activating images**
+For each feature, retrieve the top-20 images where it fires strongest, then keep the **5 most visually dissimilar** to avoid redundancy.
+
+**Step 3 — Generate a description (MedGemma 27B)**
+Send those 5 images + metadata (modality, orientation, anatomy, demographics) to a medical VLM. It outputs one natural-language phrase:
 > *"Axial CT of the abdomen and retroperitoneum in elderly patients"*
 
+**Step 4 — Validate with an independent judge**
+A second MedGemma 27B model sees the same images + **5 candidate descriptions** (1 true, 4 distractors from other features) and ranks them. If the true description lands at rank 1, the feature is well-described.
+
+| Model | Mean rank ↓ | Rank 1 | Rank 2 | Rank 3 | Rank 4 | Rank 5 |
+|---|---|---|---|---|---|---|
+| **DINOv3** | **1.60** | **170** | **38** | **21** | **13** | **8** |
+| BiomedParse | 1.91 | 141 | 44 | 28 | 20 | 17 |
+
+**DINOv3 features are more interpretable** — in 170/250 cases the judge correctly identified the true description as the best match.
+
 ---
 
-## Experiment 3c: VLM-as-judge validation
+## Experiment 3c: Language-driven retrieval
 
-- 2nd MedGemma 27B model acts as judge
-- Sees the feature's images + 5 descriptions (1 true, 4 distractors)
-- Must rank which description fits best
+**Goal:** retrieve medical images from a plain-text clinical query — no reference image, no task-specific training, no CLIP-style model.
 
-| Model | Mean rank | Rank 1 (out of 250) |
+**Step 1 — Each sparse feature already has a label**
+From Exp. 3b, every feature has a natural-language description:
+> Feature 853: *"Axial CT of the abdomen and retroperitoneum in elderly patients"*
+> Feature 1202: *"CT of the abdominal vasculature, bowel, and lumbar spine"*
+
+Each feature is effectively a medical keyword.
+
+**Step 2 — User writes a clinical query**
+> *"Axial CT of the abdomen and retroperitoneum in an elderly patient"*
+
+**Step 3 — LLM maps the query to matching features**
+An LLM reads the query + all feature descriptions and selects the best matches (e.g. features 853, 1202, 6969). No image involved yet.
+
+**Step 4 — Assemble a synthetic sparse fingerprint**
+The selected features are weighted and assembled into a sparse vector — built entirely from text, but living in the same space as image fingerprints.
+
+**Step 5 — Retrieve by cosine similarity**
+That text fingerprint is compared against all image fingerprints → closest images are returned.
+
+<img src="media/image-9.png" alt="alt text" width="600">
+
+
+| Model | Feature quality | Retrieval result |
 |---|---|---|
-| **DINOv3** | **1.60** | **170** |
-| BiomedParse | 1.91 | 141 |
-
-DINOv3 features are **more often described correctly**
-
----
-
-## Experiment 3d: Language-driven retrieval
-
-**Query:** *"Axial CT of the abdomen and retroperitoneum in an elderly patient"*
-
-```
-Text query
-  → LLM selects matching feature descriptions
-      → Assemble sparse fingerprint
-          → Retrieve images by cosine similarity
-```
-
-| Model | Result |
-|---|---|
-| DINOv3 | Retrieves correct axial abdominal CT images |
-| BiomedParse | Retrieves mixed MRI/CT thoracic images |
-
-Zero-shot — no task-specific training
-
----
-
-## Key metrics at a glance
-
-| Metric | What it measures |
-|---|---|
-| R² | Reconstruction fidelity |
-| ROC-AUC | Downstream classification performance |
-| L0 | Number of active features (sparsity) |
-| Coherence C(f) | Top activating images share similar organs? |
-| Specificity S(f) | Feature concentrated on few organs? |
-| Monosemanticity M(f) | C(f) × S(f) |
-| VLM judge rank | Do descriptions match features? |
-
----
-
-## DINOv3 vs BiomedParse: the surprising result
-
-| | BiomedParse | DINOv3 |
-|---|---|---|
-| Domain | Biomedical | General vision |
-| R² | **Higher** | Lower |
-| Monosemanticity | 0.036–0.394 | **0.356–0.714** |
-| VLM judge rank | 1.91 | **1.60** |
-| Language retrieval | Mixed | **Correct** |
-
-> Domain-specific pretraining ≠ more interpretable features
-> General visual richness may matter more for clean factorization
-
+| **DINOv3** | Clean, specific concepts (*axial CT abdomen*) | Correct axial abdominal CTs |
+| BiomedParse | Mixed concepts (*CT or MRI, thorax + abdomen*) | Mixed thoracic/abdominal images |
 ---
 
 ## Limitations
 
 - **No pathology** — TotalSegmentator is normal anatomy only
 - **2D slices** — not volumetric, misses 3D context
-- **Organ labels as proxy** — monosemanticity measured with metadata, not expert annotation
-- **No radiologist validation** — interpretability judged by VLMs only
-- **Single retrieval query** — language-driven retrieval is proof-of-concept
-- **Interpretability–performance trade-off** — sparsest features lose task signal
+- **Organ labels as approximation** — monosemanticity measured with metadata, not expert annotation
+- **Limited clinical semantic depth** — learned concepts mainly capture anatomy and modality rather than complex pathology or reasoning.
+- **Single retrieval query** — language-driven retrieval is proof-of-concept and tested on large-scale benchmark
 
 ---
 
 ## Takeaways
 
-1. SAEs can convert opaque medical embeddings into **sparse, language-describable features**
-2. **5–10 features** preserve most retrieval and downstream performance
-3. DINOv3 (general) beats BiomedParse (biomedical) on interpretability
-4. Automatic VLM pipeline is scalable but not a substitute for clinical validation
-5. Promising direction: **text query → sparse features → image retrieval**
+1. Foundation models naturally learn anatomy, modality, and orientation concepts even without explicit anatomical supervision. 
+2. SAEs can convert opaque medical embeddings into **sparse, language-describable features** without modifying or retraining the original foundation model.
+3. **5–10 features** preserve most retrieval and downstream performance
+4. DINOv3 (general) beats BiomedParse (biomedical) on interpretability (representational richness matters more than domain alignment)
+5. Sparse features enable zero-shot language-driven image retrieval without requiring a reference image
 
-> Instead of asking clinicians to trust dense vectors,
-> SAEs let medical AI expose the concepts it is using.
